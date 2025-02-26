@@ -96,3 +96,5 @@ styleSheet["TextButton"] = {
 ```
 
 Another advantage of this is, if an instance matching the selector does not have the specified modifier, the plugin will create one when applying the style sheet. Likewise, if an instance has a modifier but the style sheet does not set it, the plugin will remove the modifier.
+
+The plugin does not support layout structures the same way as appearance modifiers at the moment.
