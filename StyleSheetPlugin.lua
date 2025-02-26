@@ -1,7 +1,10 @@
 local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local Selection:Selection = game:GetService("Selection")
 local StarterGui:StarterGui = game:GetService("StarterGui")
 
 local toolbar:PluginToolbar = plugin:CreateToolbar("Style Sheets")
+
+local verbose:boolean = true
 
 local newQueue = function()
 	return {
@@ -42,6 +45,7 @@ local displayMessage = function(message:string)
 	messageText.AnchorPoint = Vector2.new(0.5, 0)
 	messageText.Position = UDim2.new(0.5, 0, 0, 0)
 	messageText.Size = UDim2.new(1, 0, 0.8, 0)
+	messageText.TextWrapped = true
 	messageText.Text = message
 	messageText.Parent = widget
 
@@ -54,6 +58,10 @@ local displayMessage = function(message:string)
 	okButton.Activated:Connect(function()
 		widget:Destroy()
 	end)
+end
+
+local printIfVerbose = function(string)
+	if verbose then print(string) end
 end
 
 local parseSelector = function(selector:string):{string}
@@ -137,7 +145,7 @@ local findDescendantsThatMatchSelector = function(root:Instance, selector:string
 	return descendants
 end
 
-local applyStyleTable = function(i:Instance, styleTable:table)
+local applyStyleTable = function(i:Instance, styleTable:table):boolean
 	-- Shortcut for appearance modifiers
 	-- https://create.roblox.com/docs/ui/appearance-modifiers
 	local appearanceModifierClasses = {"UIGradient", "UIStroke", "UICorner", "UIPadding"}
@@ -145,18 +153,29 @@ local applyStyleTable = function(i:Instance, styleTable:table)
 		if styleTable[modifierClass] == nil then
 			-- No specified modifier. If one exists, remove it.
 			for _, child in i:GetChildren() do
-				if child:IsA(modifierClass) then child:Destroy() end
+				if child:IsA(modifierClass) then
+					printIfVerbose("Removing " .. modifierClass .. " from " .. i.Name)
+					child:Destroy()
+				end
 			end
 		else
 			-- Specified modifier exists. If none exists, create one.
 			local modifierInstance = i:FindFirstChildOfClass(modifierClass)
 			if modifierInstance == nil then
+				printIfVerbose("Adding " .. modifierClass .. " to " .. i.Name)
 				modifierInstance = Instance.new(modifierClass)
 				modifierInstance.Parent = i
 			end
 			-- Apply styles
 			for key:string, value in styleTable[modifierClass] do
-				modifierInstance[key] = value
+				printIfVerbose(string.format("Applying to %s of %s: key=%s, value=%s", modifierClass, i.Name, key, tostring(value)))
+				local success:boolean, errorMessage = pcall(function() modifierInstance[key] = value end)
+				if not success then
+					local fullMessage = string.format("An error occurred when applying the style sheet to %s of %s:\n\n%s\n\nNo changes were made.",
+						modifierClass, i.Name, errorMessage)
+					displayMessage(fullMessage)
+					return false
+				end
 			end
 		end
 	end
@@ -164,31 +183,55 @@ local applyStyleTable = function(i:Instance, styleTable:table)
 	-- Other attributes
 	for key:string, value in styleTable do
 		if table.find(appearanceModifierClasses, key) ~= nil then continue end
-		i[key] = value
+		printIfVerbose(string.format("Applying to %s: key=%s, value=%s", i.Name, key, tostring(value)))
+		local success:boolean, errorMessage = pcall(function() i[key] = value end)
+		if not success then
+			local fullMessage = string.format("An error occurred when applying the style sheet to %s:\n\n%s\n\nNo changes were made.",
+				i.Name, errorMessage)
+			displayMessage(fullMessage)
+			return false
+		end
 	end
+	
+	return true
 end
 
-local applyStyleSheetButton:PluginToolbarButton = toolbar:CreateButton("Apply",	"Apply the style sheet in StarterGui.", "")
+local applyStyleSheetButton:PluginToolbarButton = toolbar:CreateButton("Apply",	"Apply the style sheet in StarterGui.", "rbxassetid://12111879608")
 applyStyleSheetButton.ClickableWhenViewportHidden = true
 
 applyStyleSheetButton.Click:Connect(function()
 	local styleSheetModule:Instance = StarterGui["StyleSheet"]
 	if styleSheetModule == nil then
-		displayMessage("Style sheet not found. To use this plugin, place a ModuleScript named \"StyleSheet\" under StarterGui.")
+		displayMessage("Style sheet not found. To use this plugin, place a ModuleScript named \"StyleSheet\" under StarterGui.\n\nRefer to the store page of this plugin for more details.")
 		return
 	end
 	local styleSheet = require(styleSheetModule:Clone())  -- To prevent caching
 	
 	local recordId:string? = ChangeHistoryService:TryBeginRecording("Apply style sheet", "Apply style sheet")
 	if recordId == nil then
-		print("Unable to record changes. Are you in play mode?")
+		-- Attempt to cancel previous recording and retry
+		print("Unable to record change history; retrying.")
+		ChangeHistoryService:FinishRecording(nil, Enum.FinishRecordingOperation.Cancel)
+		recordId = ChangeHistoryService:TryBeginRecording("Apply style sheet", "Apply style sheet")
+	end
+	if recordId == nil then
+		displayMessage("Unable to record changes. Are you in play mode?")
 		return
 	end
 	
+	-- Verbose?
+	verbose = styleSheet.verbose == true
+	
 	for selector:string, styleTable:table in styleSheet do
+		printIfVerbose("Processing selector: " .. selector)
 		local instances:{Instance} = findDescendantsThatMatchSelector(StarterGui, selector)
+		printIfVerbose("Found " .. tostring(#instances) .. " instances that match this selector.")
 		for _, i in instances do
-			applyStyleTable(i, styleTable)
+			local success = applyStyleTable(i, styleTable)
+			if not success then
+				ChangeHistoryService:FinishRecording(recordId, Enum.FinishRecordingOperation.Cancel)
+				return
+			end
 		end
 	end
 	
