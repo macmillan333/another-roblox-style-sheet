@@ -10,7 +10,7 @@ To use the plugin, first create a style sheet: a `ModuleScript` named `StyleShee
 
 ![image](https://github.com/user-attachments/assets/7dc0012b-2b37-4033-a108-3f03a62ec8d5)
 
-After you write your style sheet, click the `Apply` button to apply it to all applicable instances in `StarterGui`! If there's a mistake in your style sheet, a message box will pop up to show you the error message.
+After you write your style sheet, click the `Apply` button to apply it to all applicable instances in `Workspace` and `StarterGui`! If there's a mistake in your style sheet, a message box will pop up to show you the error message.
 
 ## An example style sheet
 
