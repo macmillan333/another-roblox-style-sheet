@@ -1,4 +1,5 @@
-local ChangeHistoryService = game:GetService("ChangeHistoryService")
+local ChangeHistoryService:ChangeHistoryService = game:GetService("ChangeHistoryService")
+local CollectionService:CollectionService = game:GetService("CollectionService")
 local Selection:Selection = game:GetService("Selection")
 local StarterGui:StarterGui = game:GetService("StarterGui")
 
@@ -129,16 +130,15 @@ local findDescendantsThatMatchSelectorPart = function(roots:{Instance}, part:str
 		local i:Instance = queue:pop()
 		if instanceMatchesSelectorPart(i, part) then
 			table.insert(descendants, i)
-		else
-			for _, child:Instance in i:GetChildren() do queue:push(child) end
 		end
+		for _, child:Instance in i:GetChildren() do queue:push(child) end
 	end
 	return descendants
 end
 
-local findDescendantsThatMatchSelector = function(root:Instance, selector:string):{Instance}
+local findDescendantsThatMatchSelector = function(roots:{Instance}, selector:string):{Instance}
 	local parts:{string} = parseSelector(selector)
-	local descendants:{Instance} = {root}
+	local descendants:{Instance} = roots
 	for _, part in parts do
 		descendants = findDescendantsThatMatchSelectorPart(descendants, part)
 	end
@@ -196,17 +196,29 @@ local applyStyleTable = function(i:Instance, styleTable:table):boolean
 	return true
 end
 
-local applyStyleSheetButton:PluginToolbarButton = toolbar:CreateButton("Apply",	"Apply the style sheet in StarterGui.", "rbxassetid://12111879608")
+local applyStyleSheetButton:PluginToolbarButton = toolbar:CreateButton("Apply",	"Apply the style sheet to all ScreenGui, SurfaceGui, BillboardGui and AdGui's.", "rbxassetid://12111879608")
 applyStyleSheetButton.ClickableWhenViewportHidden = true
 
 applyStyleSheetButton.Click:Connect(function()
 	local styleSheetModule:Instance = StarterGui["StyleSheet"]
 	if styleSheetModule == nil then
-		displayMessage("Style sheet not found. To use this plugin, place a ModuleScript named \"StyleSheet\" under StarterGui.\n\nRefer to the store page of this plugin for more details.")
+		displayMessage("Style sheet not found. To use this plugin, place a ModuleScript named \"StyleSheet\" under StarterGui.")
 		return
 	end
+	
+	-- If you get "Requested module experienced an error while loading" when applying style sheet,
+	-- look in the output panel for an error in your style sheet.
 	local styleSheet = require(styleSheetModule:Clone())  -- To prevent caching
 	
+	-- Find all GUI roots
+	local roots:{Instance} = {StarterGui}
+	for _, instance:Instance in workspace:GetDescendants() do
+		if instance:IsA("SurfaceGui") or instance:IsA("BillboardGui") or instance:IsA("AdGui") then
+			table.insert(roots, instance)
+		end
+	end
+	
+	-- Begin recording history
 	local recordId:string? = ChangeHistoryService:TryBeginRecording("Apply style sheet", "Apply style sheet")
 	if recordId == nil then
 		-- Attempt to cancel previous recording and retry
@@ -222,9 +234,10 @@ applyStyleSheetButton.Click:Connect(function()
 	-- Verbose?
 	verbose = styleSheet.verbose == true
 	
+	-- Apply style sheet
 	for selector:string, styleTable:table in styleSheet do
 		printIfVerbose("Processing selector: " .. selector)
-		local instances:{Instance} = findDescendantsThatMatchSelector(StarterGui, selector)
+		local instances:{Instance} = findDescendantsThatMatchSelector(roots, selector)
 		printIfVerbose("Found " .. tostring(#instances) .. " instances that match this selector.")
 		for _, i in instances do
 			local success = applyStyleTable(i, styleTable)
@@ -235,5 +248,6 @@ applyStyleSheetButton.Click:Connect(function()
 		end
 	end
 	
+	-- Stop recording
 	ChangeHistoryService:FinishRecording(recordId, Enum.FinishRecordingOperation.Commit)
 end)
